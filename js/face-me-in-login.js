@@ -21,7 +21,7 @@
 							}
 						}
 					} ).then( function ( stream ) {
-						var $video, video, canvas, context, attempts = 5, timer;
+						var $video, video, canvas, context, attempts = 5, timer, fetch;
 
 						// Add video for camera.
 						$( '<video/>', {
@@ -47,8 +47,7 @@
 
 						context = canvas.getContext( '2d' );
 
-						// Capture every 2 secs for 20 seconds.
-						timer = setInterval( function () {
+						fetch = function () {
 							if ( ! attempts ) {
 								clearInterval( timer );
 								return;
@@ -66,11 +65,15 @@
 									challenge: dataURI
 								},
 								success: function ( data ) {
+									clearInterval( timer );
+
 									var redirect = location.search.match( /redirect_to=([^&]+)/ )
+
 									if ( redirect ) {
 										window.location.href = decodeURIComponent( redirect );
 										return;
 									}
+
 									window.location.href = data.redirect;
 								},
 								error:   function ( data ) {
@@ -79,7 +82,13 @@
 							} );
 
 							attempts--;
-						}, 2000 );
+						}
+
+						// Fire one immediately.
+						fetch();
+
+						// Capture every 4 secs for 20 seconds.
+						timer = setInterval( fetch, 4000 );
 					} );
 				}
 			} )
