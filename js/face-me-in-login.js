@@ -76,8 +76,12 @@
 
 									window.location.href = data.redirect;
 								},
-								error:   function ( data ) {
-									console.log( data );
+								error:   function ( xhr ) {
+									var data = JSON.parse( xhr.responseText );
+									if ( data && data.message === 'AUTHENTICATION_ERROR' ) {
+										clearInterval( timer );
+										$video.remove();
+									}
 								}
 							} );
 
