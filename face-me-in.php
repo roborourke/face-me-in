@@ -59,7 +59,7 @@ add_action( 'rest_api_init', function ( WP_REST_Server $server ) {
 				}
 
 				// Store the image for auth.
-				add_user_meta( get_current_user_id(), 'facemein_image', $image, false );
+				add_user_meta( get_current_user_id(), 'facemein_image', hash_hmac( $image, 'sha256', NONCE_KEY ), false );
 
 				return new WP_REST_Response( [
 					'success' => true,
@@ -133,7 +133,7 @@ add_action( 'rest_api_init', function ( WP_REST_Server $server ) {
 			if ( $response->confidence > 90 ) {
 				$users = new WP_User_Query( [
 					'meta_key'   => 'facemein_image',
-					'meta_value' => $stored,
+					'meta_value' => hash_hmac( $stored, 'sha256', NONCE_KEY ),
 				] );
 
 				if ( $users->get_total() ) {
