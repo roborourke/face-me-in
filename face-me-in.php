@@ -58,20 +58,55 @@ add_action( 'rest_api_init', function ( WP_REST_Server $server ) {
 					], 400 );
 				}
 
+				$api_call = wp_remote_post( 'https://api-us.faceplusplus.com/facepp/v3/detect', [
+					'timeout' => 10,
+					'body'    => [
+						'api_key'      => get_api_key(),
+						'api_secret'   => get_secret(),
+						'image_base64' => str_replace( 'data:image/png;base64,', '', $image ),
+					],
+				] );
+
+				if ( is_wp_error( $api_call ) ) {
+					return new WP_REST_Response( [
+						'error'   => 'request',
+						'message' => $api_call->get_error_message(),
+					], 400 );
+				}
+
+				$response = json_decode( wp_remote_retrieve_body( $api_call ) );
+
+				if ( isset( $response->error_message ) ) {
+					return new WP_REST_Response( [
+						'error'   => 'api',
+						'message' => $response->error_message,
+					], wp_remote_retrieve_response_code( $api_call ) );
+				}
+
+				if ( empty( $response->faces ) ) {
+					return new WP_REST_Response( [
+						'error'   => 'api',
+						'message' => __( 'No faces found.', 'facemein' ),
+					], wp_remote_retrieve_response_code( $api_call ) );
+				}
+
 				// Store the image for auth.
-				add_user_meta( get_current_user_id(), 'facemein_image', hash_hmac( $image, 'sha256', NONCE_KEY ), false );
+				add_user_meta( get_current_user_id(), 'facemein_image', hash_hmac( 'sha256', $image, NONCE_KEY ), false );
+				add_user_meta( get_current_user_id(), 'facemein_token', hash_hmac( 'sha256', $response->faces[0]->face_token, NONCE_KEY ), false );
 
 				return new WP_REST_Response( [
-					'success' => true,
+					'success'   => true,
+					'stored_id' => $response->faces[0]->face_token,
 				], 200 );
 			},
 		],
 		[
 			'methods'             => $server::DELETABLE,
 			'permission_callback' => __NAMESPACE__ . '\capture_permission',
-			'callback'            => function ( WP_REST_Request $request ) {
+			'callback'            => function () {
 				// Remove all stored images for auth.
 				delete_user_meta( get_current_user_id(), 'facemein_image' );
+				delete_user_meta( get_current_user_id(), 'facemein_token' );
 
 				return new WP_REST_Response( [
 					'success' => true,
@@ -93,9 +128,10 @@ add_action( 'rest_api_init', function ( WP_REST_Server $server ) {
 
 			// Get the images to compare.
 			$stored    = $request->get_param( 'stored' );
+			$stored_id = $request->get_param( 'stored_id' );
 			$challenge = $request->get_param( 'challenge' );
 
-			if ( empty( $stored ) || empty( $challenge ) ) {
+			if ( ( empty( $stored ) || empty( $stored_id ) ) || empty( $challenge ) ) {
 				return new WP_REST_Response( [
 					'error'   => 'missing_params',
 					'message' => __( 'Missing parameter, you must provide a stored image and a challenge image.' ),
@@ -108,6 +144,7 @@ add_action( 'rest_api_init', function ( WP_REST_Server $server ) {
 				'body'    => [
 					'api_key'        => get_api_key(),
 					'api_secret'     => get_secret(),
+					'face_token1'    => $stored_id,
 					'image_base64_1' => str_replace( 'data:image/png;base64,', '', $stored ),
 					'image_base64_2' => str_replace( 'data:image/png;base64,', '', $challenge ),
 				],
@@ -129,11 +166,20 @@ add_action( 'rest_api_init', function ( WP_REST_Server $server ) {
 				], wp_remote_retrieve_response_code( $api_call ) );
 			}
 
+			// No second face found.
+			if ( ! isset( $response->confidence ) ) {
+				return new WP_REST_Response( [
+					'error'     => 'api',
+					'message'   => __( 'No face detected in challenge image', 'facemein' ),
+					'stored_id' => $response->image_id1,
+				], 400 );
+			}
+
 			// High enough confidence?
 			if ( $response->confidence > 90 ) {
 				$users = new WP_User_Query( [
 					'meta_key'   => 'facemein_image',
-					'meta_value' => hash_hmac( $stored, 'sha256', NONCE_KEY ),
+					'meta_value' => hash_hmac( 'sha256', $stored, NONCE_KEY ),
 				] );
 
 				if ( $users->get_total() ) {
@@ -143,20 +189,22 @@ add_action( 'rest_api_init', function ( WP_REST_Server $server ) {
 					wp_set_auth_cookie( $user->ID );
 
 					return new WP_REST_Response( [
-						'success'  => true,
-						'user'     => [
+						'success'   => true,
+						'user'      => [
 							'name' => $user->get( 'display_name' ),
 							'ID'   => $user->ID,
 						],
-						'redirect' => admin_url(),
+						'redirect'  => admin_url(),
+						'stored_id' => $response->image_id1,
 					], 200 );
 				}
 			}
 
 			// Low confidence.
 			return new WP_REST_Response( [
-				'error'   => 'auth',
-				'message' => sprintf( __( 'Confidence score too low: %s', 'facemein' ), floatval( $response['confidence'] ) ),
+				'error'     => 'auth',
+				'message'   => sprintf( __( 'Confidence score too low: %s', 'facemein' ), floatval( $response->confidence ) ),
+				'stored_id' => $response->image_id1,
 			], 400 );
 		},
 	] );
@@ -186,4 +234,40 @@ add_action( 'login_enqueue_scripts', function () {
 		],
 		'endpoint' => get_rest_url( null, 'facemein/v1/auth' ),
 	] );
+} );
+
+add_action( 'admin_init', function () {
+	add_settings_section(
+		'face-me-in',
+		__( 'Face Me In', 'facemein' ),
+		function () {
+			printf(
+				esc_html__( '%s for an API key and secret then enter them here to start using Face Me In.', 'facemein' ),
+				sprintf(
+					'<a href="%s">%s</a>',
+					'https://console.faceplusplus.com/register',
+					__( 'Register on Face++', 'facemein' )
+				)
+			);
+		},
+		'general'
+	);
+
+	foreach ( [
+		'api_key' => __( 'API Key', 'facemein' ),
+		'secret'  => __( 'Secret', 'facemein' ),
+	] as $field => $label ) {
+		register_setting( 'general', "facemein_{$field}", [
+			'type'              => 'string',
+			'sanitize_callback' => 'sanitize_key',
+		] );
+		add_settings_field( "facemein_{$field}", $label, function () use ( $field ) {
+			printf(
+				'<input class="regular-text" type="%s" name="%s" value="%s" width="50" />',
+				$field === 'secret' ? 'password' : 'text',
+				"facemein_{$field}",
+				esc_attr( call_user_func( __NAMESPACE__ . "\get_{$field}" ) )
+			);
+		}, 'general', 'face-me-in' );
+	}
 } );

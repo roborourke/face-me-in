@@ -39,15 +39,15 @@
 					.appendTo( 'body' )
 					.on( 'click', function () {
 						var canvas = d.createElement( 'canvas' );
-						canvas.width = $( this ).width();
-						canvas.height = $( this ).height();
+						canvas.width = $( this ).width() / 2;
+						canvas.height = $( this ).height() / 2;
 
 						var context = canvas.getContext( '2d' );
-						context.drawImage( this, 0, 0, $( this ).width(), $( this ).height() );
+						context.drawImage( this, 0, 0, canvas.width, canvas.height );
 
 						var dataURI = canvas.toDataURL( 'image/png' );
 
-						localStorage.setItem( 'facemein', dataURI );
+						//localStorage.setItem( 'facemein', dataURI );
 
 						$.ajax( {
 							url:     FaceMeIn.endpoint,
@@ -58,7 +58,13 @@
 							data:    {
 								image: dataURI
 							},
-							success: function () {
+							success: function ( data ) {
+								if ( data.error ) {
+									alert( data.message );
+								}
+
+								localStorage.setItem( 'facemein', data.stored_id );
+
 								$( '#wp-admin-bar-enable-facemein a' ).text( FaceMeIn.l10n.enable );
 								$( '#facemein-video' ).remove();
 								$( '#wp-admin-bar-enable-facemein, #wp-admin-bar-disable-facemein' ).toggle();
@@ -77,15 +83,17 @@
 						}
 					} ).then( function ( stream ) {
 						$( '#facemein-video' ).get( 0 ).src = window.URL.createObjectURL( stream );
-						$( '#facemein-video' ).get( 0 ).play();
+						$( '#facemein-video' ).on( 'click', function() {
+							stream.getVideoTracks().forEach( function( track ) { track.stop() } );
+						} ).get( 0 ).play();
 					} );
 				}
 			} )
 			.appendTo( $( '<li/>', {
-				"id":        "wp-admin-bar-enable-facemein",
-				"style":     "position:relative;overflow:hidden;",
-				"aria-live": "polite"
-			} )
+					"id":        "wp-admin-bar-enable-facemein",
+					"style":     "position:relative;overflow:hidden;",
+					"aria-live": "polite"
+				} )
 				.appendTo( '#wp-admin-bar-user-actions' ) );
 
 		if ( FaceMeIn.faces.length ) {

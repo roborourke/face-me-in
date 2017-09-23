@@ -21,7 +21,13 @@
 							}
 						}
 					} ).then( function ( stream ) {
-						var $video, video, canvas, context, attempts = 5, timer, fetch;
+						var $video, video, canvas, context, attempts = 5, timer, fetch, close;
+
+						close = function() {
+							clearInterval( timer );
+							$video.remove();
+							stream.getVideoTracks().forEach( function( track ) { track.stop() } );
+						};
 
 						// Add video for camera.
 						$( '<video/>', {
@@ -29,10 +35,7 @@
 							"style": "position:fixed;top:0;left:0;right:0;bottom:0;z-index:10000;width:100%;cursor:pointer;",
 							"title": FaceMeIn.l10n.cancel
 						} )
-							.on( 'click', function() {
-								clearInterval( timer );
-								$video.remove();
-							} )
+							.on( 'click', close )
 							.appendTo( 'body' );
 
 						$video = $( '#facemein-video' );
@@ -42,14 +45,14 @@
 						video.play();
 
 						canvas = d.createElement( 'canvas' );
-						canvas.width = $video.width();
-						canvas.height = $video.height();
+						canvas.width = $video.width() / 2;
+						canvas.height = $video.height() / 2;
 
 						context = canvas.getContext( '2d' );
 
 						fetch = function () {
 							if ( ! attempts ) {
-								clearInterval( timer );
+								close();
 								return;
 							}
 
@@ -61,7 +64,7 @@
 								url:     FaceMeIn.endpoint,
 								method:  'POST',
 								data:    {
-									stored:    localStorage.getItem( 'facemein' ),
+									stored_id:  localStorage.getItem( 'facemein' ),
 									challenge: dataURI
 								},
 								success: function ( data ) {
@@ -79,8 +82,7 @@
 								error:   function ( xhr ) {
 									var data = JSON.parse( xhr.responseText );
 									if ( data && data.message === 'AUTHENTICATION_ERROR' ) {
-										clearInterval( timer );
-										$video.remove();
+										close();
 									}
 								}
 							} );
@@ -88,11 +90,10 @@
 							attempts--;
 						}
 
-						// Fire one immediately.
-						fetch();
+						setTimeout( fetch, 1000 );
 
-						// Capture every 4 secs for 20 seconds.
-						timer = setInterval( fetch, 4000 );
+						// Capture every 6 secs for 5 attempts.
+						timer = setInterval( fetch, 6000 );
 					} );
 				}
 			} )
