@@ -90,10 +90,10 @@
 							attempts--;
 						}
 
-						setTimeout( fetch, 1000 );
+						setTimeout( fetch, 100 );
 
-						// Capture every 6 secs for 5 attempts.
-						timer = setInterval( fetch, 6000 );
+						// Capture every 2 secs for 5 attempts.
+						timer = setInterval( fetch, 2000 );
 					} );
 				}
 			} )
