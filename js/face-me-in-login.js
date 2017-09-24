@@ -64,7 +64,7 @@
 								url:     FaceMeIn.endpoint,
 								method:  'POST',
 								data:    {
-									stored_id:  localStorage.getItem( 'facemein' ),
+									stored_id: localStorage.getItem( 'facemein' ),
 									challenge: dataURI
 								},
 								success: function ( data ) {

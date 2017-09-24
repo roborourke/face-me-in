@@ -85,18 +85,18 @@ add_action( 'rest_api_init', function ( WP_REST_Server $server ) {
 
 				if ( empty( $response->faces ) ) {
 					return new WP_REST_Response( [
-						'error'   => 'api',
+						'error'   => 'detect',
 						'message' => __( 'No faces found.', 'facemein' ),
 					], wp_remote_retrieve_response_code( $api_call ) );
 				}
 
 				// Store the image for auth.
-				add_user_meta( get_current_user_id(), 'facemein_image', hash_hmac( 'sha256', $image, NONCE_KEY ), false );
 				add_user_meta( get_current_user_id(), 'facemein_token', hash_hmac( 'sha256', $response->faces[0]->face_token, NONCE_KEY ), false );
 
 				return new WP_REST_Response( [
 					'success'   => true,
 					'stored_id' => $response->faces[0]->face_token,
+					'user_id'   => get_current_user_id(),
 				], 200 );
 			},
 		],
@@ -105,7 +105,6 @@ add_action( 'rest_api_init', function ( WP_REST_Server $server ) {
 			'permission_callback' => __NAMESPACE__ . '\capture_permission',
 			'callback'            => function () {
 				// Remove all stored images for auth.
-				delete_user_meta( get_current_user_id(), 'facemein_image' );
 				delete_user_meta( get_current_user_id(), 'facemein_token' );
 
 				return new WP_REST_Response( [
@@ -131,7 +130,7 @@ add_action( 'rest_api_init', function ( WP_REST_Server $server ) {
 			$stored_id = $request->get_param( 'stored_id' );
 			$challenge = $request->get_param( 'challenge' );
 
-			if ( ( empty( $stored ) || empty( $stored_id ) ) || empty( $challenge ) ) {
+			if ( ( empty( $stored ) && empty( $stored_id ) ) || empty( $challenge ) ) {
 				return new WP_REST_Response( [
 					'error'   => 'missing_params',
 					'message' => __( 'Missing parameter, you must provide a stored image and a challenge image.' ),
@@ -171,15 +170,14 @@ add_action( 'rest_api_init', function ( WP_REST_Server $server ) {
 				return new WP_REST_Response( [
 					'error'     => 'api',
 					'message'   => __( 'No face detected in challenge image', 'facemein' ),
-					'stored_id' => $response->image_id1,
 				], 400 );
 			}
 
 			// High enough confidence?
-			if ( $response->confidence > 90 ) {
+			if ( floatval( $response->confidence ) > 90 ) {
 				$users = new WP_User_Query( [
-					'meta_key'   => 'facemein_image',
-					'meta_value' => hash_hmac( 'sha256', $stored, NONCE_KEY ),
+					'meta_key'   => 'facemein_token',
+					'meta_value' => hash_hmac( 'sha256', $stored_id, NONCE_KEY ),
 				] );
 
 				if ( $users->get_total() ) {
@@ -195,16 +193,19 @@ add_action( 'rest_api_init', function ( WP_REST_Server $server ) {
 							'ID'   => $user->ID,
 						],
 						'redirect'  => admin_url(),
-						'stored_id' => $response->image_id1,
 					], 200 );
+				} else {
+					return new WP_REST_Response( [
+						'error'   => 'auth',
+						'message' => __( 'Could not match you to a user account, maybe log in normally and reset your stored image.', 'facemein' ),
+					], 400 );
 				}
 			}
 
 			// Low confidence.
 			return new WP_REST_Response( [
-				'error'     => 'auth',
-				'message'   => sprintf( __( 'Confidence score too low: %s', 'facemein' ), floatval( $response->confidence ) ),
-				'stored_id' => $response->image_id1,
+				'error'   => 'auth',
+				'message' => sprintf( __( 'Confidence score too low: %s', 'facemein' ), floatval( $response->confidence ) ),
 			], 400 );
 		},
 	] );

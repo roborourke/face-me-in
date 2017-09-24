@@ -47,7 +47,7 @@
 
 						var dataURI = canvas.toDataURL( 'image/png' );
 
-						//localStorage.setItem( 'facemein', dataURI );
+						$( this ).remove();
 
 						$.ajax( {
 							url:     FaceMeIn.endpoint,
@@ -66,7 +66,6 @@
 								localStorage.setItem( 'facemein', data.stored_id );
 
 								$( '#wp-admin-bar-enable-facemein a' ).text( FaceMeIn.l10n.enable );
-								$( '#facemein-video' ).remove();
 								$( '#wp-admin-bar-enable-facemein, #wp-admin-bar-disable-facemein' ).toggle();
 							}
 						} );
