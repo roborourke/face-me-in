@@ -6,6 +6,7 @@
 
 namespace FaceMeIn;
 
+use AWS\Rekognition\RekognitionClient;
 use WP_REST_Server;
 use WP_REST_Request;
 use WP_REST_Response;
@@ -38,6 +39,41 @@ function capture_permission() {
 	}
 
 	return true;
+}
+
+/**
+ * Get the AWS Rekognition client.
+ *
+ * @return \Aws\Rekognition\RekognitionClient
+ */
+function get_rekognition_client() : RekognitionClient {
+	$client_args = [
+		'version' => '2016-06-27',
+		'region'  => 'us-east-1',
+	];
+
+	if ( defined( 'AWS_KEY_ID' ) && defined( 'AWS_KEY_SECRET' ) && defined( 'AWS_REGION' ) ) {
+		$client_args['credentials'] = [
+			'key'    => AWS_KEY_ID,
+			'secret' => AWS_KEY_SECRET,
+			'region' => AWS_REGION,
+		];
+	} elseif ( defined( 'S3_UPLOADS_KEY' ) && defined( 'S3_UPLOADS_SECRET' ) && defined( 'S3_UPLOADS_REGION' ) ) {
+		$client_args['credentials'] = [
+			'key'    => S3_UPLOADS_KEY,
+			'secret' => S3_UPLOADS_SECRET,
+			'region' => S3_UPLOADS_REGION,
+		];
+	}
+
+	/**
+	 * Modify the RekognitionClient configuration.
+	 *
+	 * @param array $client_args Args used to instantiate the RekognitionClient
+	 */
+	$client_args = apply_filters( 'hm.aws.rekognition.client', $client_args );
+
+	return RekognitionClient::factory( $client_args );
 }
 
 add_action( 'rest_api_init', function ( WP_REST_Server $server ) {
